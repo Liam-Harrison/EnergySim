@@ -38,8 +38,6 @@ public abstract class Generator : MonoBehaviour, IEnergyProducer, ICircuitConnec
 			return JoulesAvaliable / Capacity;
 		}
 	}
-	
-	public int NodeID { get; private set; }
 
 	// Inspector
 

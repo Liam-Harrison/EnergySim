@@ -9,6 +9,7 @@ public class EnergySimulation
 {
 	private List<EnergyConsumer> consumers = new List<EnergyConsumer>();
 	private List<Generator> generators = new List<Generator>();
+	private List<Battery> batteries = new List<Battery>();
 
 	public void AddGenerator(Generator generator)
 	{
@@ -30,6 +31,16 @@ public class EnergySimulation
 		if (consumers.Contains(consumer)) consumers.Remove(consumer);
 	}
 
+	public void AddBattery(Battery battery)
+	{
+		if (!batteries.Contains(battery)) batteries.Add(battery);
+	}
+
+	public void RemoveBattery(Battery battery)
+	{
+		if (batteries.Contains(battery)) batteries.Remove(battery);
+	}
+
 	/// <summary>
 	/// Ensure all energy generators and consumers are connected, update info if circuit has changed.
 	/// </summary>
@@ -39,6 +50,10 @@ public class EnergySimulation
 		foreach (var generator in generators)
 		{
 			generator.EnergyUpdate(dt);
+		}
+		foreach (var battery in batteries)
+		{
+			battery.EnergyUpdate(dt);
 		}
 		foreach (var consumer in consumers)
 		{

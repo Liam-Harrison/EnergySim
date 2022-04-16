@@ -38,8 +38,6 @@ public class EnergyConsumer : MonoBehaviour, IEnergyConsumer, ICircuitConnected
 
 	public bool IsActive { get; private set; } = true;
 
-	public int NodeID { get; private set; }
-
 	// Inspector
 
 	private MeshRenderer mesh;

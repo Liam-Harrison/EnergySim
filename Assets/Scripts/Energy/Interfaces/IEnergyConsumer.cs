@@ -2,7 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public interface IEnergyConsumer
+public interface IEnergyConsumer: ICircuitConnected
 {
 	float WattsUsed { get; }
 	float WattsNeededWhenActive { get; }

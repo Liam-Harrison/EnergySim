@@ -10,27 +10,31 @@ public class CircuitManager
 
 	private List<Generator> loop_generators = new List<Generator>();
 
-	private List<EnergyConsumer> consumers = new List<EnergyConsumer>();
+	private List<IEnergyConsumer> consumers = new List<IEnergyConsumer>();
 	private List<Generator> generators = new List<Generator>();
 
 	public void AddGenerator(Generator generator)
 	{
-		if (!generators.Contains(generator)) generators.Add(generator);
+		generators.Add(generator);
+		IsDirty = true;
 	}
 
 	public void RemoveGenerator(Generator generator)
 	{
-		if (generators.Contains(generator)) generators.Remove(generator);
+		generators.Remove(generator);
+		IsDirty = true;
 	}
 
-	public void AddEnergyConsumer(EnergyConsumer consumer)
+	public void AddEnergyConsumer(IEnergyConsumer consumer)
 	{
-		if (!consumers.Contains(consumer)) consumers.Add(consumer);
+		consumers.Add(consumer);
+		IsDirty = true;
 	}
 
-	public void RemoveEnergyConsumer(EnergyConsumer consumer)
+	public void RemoveEnergyConsumer(IEnergyConsumer consumer)
 	{
-		if (consumers.Contains(consumer)) consumers.Remove(consumer);
+		consumers.Remove(consumer);
+		IsDirty = true;
 	}
 
 	public int GetCircuitID(ICircuitConnected entity)
@@ -64,6 +68,7 @@ public class CircuitManager
 
 			var generators = circuit.generators;
 			var consumers = circuit.consumers;
+			var batteries = circuit.batteries;
 			var powered = false;
 			var hasGens = generators.Count > 0;
 
@@ -78,7 +83,18 @@ public class CircuitManager
 				}
 			}
 
+			batteries.Sort((a, b) => a.JoulesAvaliable.CompareTo(b.JoulesAvaliable));
 			loop_generators.Sort((a, b) => a.JoulesAvaliable.CompareTo(b.JoulesAvaliable));
+
+			float minPercent = 1;
+			foreach (var battery in batteries)
+			{
+				minPercent = Mathf.Min(minPercent, battery.PercentFull);
+			}
+			circuit.minBatteryPercent = minPercent;
+
+			if (circuit.minBatteryPercent > 0)
+				powered = true;
 
 			if (powered)
 			{
@@ -102,7 +118,11 @@ public class CircuitManager
 							}
 						}
 
-						// Add transformers and batteries and stuff here if added.
+						if (!satisfied)
+						{
+							wattsNeeded = GetJoulesFromBatteries(wattsNeeded, batteries, consumer);
+							satisfied = wattsNeeded <= 0f;
+						}
 
 						if (satisfied)
 						{
@@ -138,7 +158,21 @@ public class CircuitManager
 			circuits[i] = circuit;
 		}
 
-		// Charge batteries & transformers here with whatever joules are remaining.
+		foreach (var circuit in circuits)
+		{
+			circuit.batteries.Sort((a, b) => (a.Capacity - a.JoulesAvaliable).CompareTo(b.Capacity - b.JoulesAvaliable));
+			circuit.generators.Sort((a, b) => (a.Capacity - a.JoulesAvaliable).CompareTo(b.Capacity - b.JoulesAvaliable));
+
+			float joules = 0;
+			ChargeBatteries(circuit.batteries, circuit.generators, ref joules);
+
+			float minPercent = 1;
+			foreach (var battery in circuit.batteries)
+			{
+				minPercent = Mathf.Min(minPercent, battery.PercentFull);
+			}
+			circuit.minBatteryPercent = minPercent;
+		}
 	}
 
 	private void RefreshCircuits(float dt)
@@ -156,6 +190,8 @@ public class CircuitManager
 				{
 					generators = new List<Generator>(),
 					consumers = new List<IEnergyConsumer>(),
+					batteries = new List<Battery>(),
+					minBatteryPercent = 1,
 				};
 				circuits.Add(info);
 			}
@@ -181,7 +217,15 @@ public class CircuitManager
 				var id = GetCircuitID(consumer);
 				if (id != int.MaxValue)
 				{
-					circuit.consumers.Add(consumer);
+					if (consumer is Battery battery)
+					{
+						circuit.batteries.Add(battery);
+						circuit.minBatteryPercent = Mathf.Min(circuit.minBatteryPercent, battery.PercentFull);
+					}
+					else
+					{
+						circuit.consumers.Add(consumer);
+					}
 				}
 			}
 		}
@@ -195,15 +239,76 @@ public class CircuitManager
 		generator.ApplyJouleDelta(-joules);
 		return needed_joules;
 	}
+
+	private float GetJoulesFromBatteries(float needed_joules, List<Battery> batteries, IEnergyConsumer consumer)
+	{
+		foreach (var battery in batteries)
+		{
+			var joules = battery.JoulesAvaliable;
+			if (joules > 0)
+			{
+				var prev = needed_joules;
+				needed_joules = Mathf.Max(0, needed_joules - joules);
+				var dt = needed_joules - prev;
+				battery.ConsumeEnergy(-dt);
+
+				if (needed_joules <= 0)
+					return 0;
+			}
+		}
+		return needed_joules;
+	}
+
+	private void ChargeBatteries(List<Battery> batteries, List<Generator> generators, ref float joules_used)
+	{
+		if (batteries.Count == 0)
+			return;
+
+		foreach (var generator in generators)
+		{
+			bool charging = true;
+			while (charging && generator.JoulesAvaliable > 0)
+			{
+				charging = ChargeBatteriesFromGenerator(batteries, generator, ref joules_used);
+			}
+		}
+	}
+
+	private bool ChargeBatteriesFromGenerator(List<Battery> batteries, Generator generator, ref float joules_used)
+	{
+		float joules = generator.JoulesAvaliable;
+		float consumed = 0;
+
+		for (int i = 0; i < batteries.Count; i++)
+		{
+			var battery = batteries[i];
+			float required = battery.Capacity - battery.JoulesAvaliable;
+			if (required > 0)
+			{
+				float toAdd = Mathf.Min(required, joules / (batteries.Count - i));
+				battery.AddJoules(toAdd);
+				joules -= toAdd;
+				consumed += toAdd;
+			}
+		}
+		if (consumed > 0)
+		{
+			generator.ApplyJouleDelta(-consumed);
+			joules_used += joules;
+			return true;
+		}
+		return false;
+	}
 }
 
-public struct CircuitInfo
+public class CircuitInfo
 {
 	public float wattsUsed;
 	public float minBatteryPercent;
 
 	public List<IEnergyConsumer> consumers;
 	public List<Generator> generators;
+	public List<Battery> batteries;
 }
 
 public enum ConnectionStatus
